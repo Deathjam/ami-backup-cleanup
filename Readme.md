@@ -8,3 +8,5 @@
 - zip both .py files and upload to s3 bucket
 - run cloudformation
 
+The Cron and the names of the files and bucket is all parameterised in the cloudformation
+
