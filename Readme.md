@@ -19,3 +19,5 @@ If there is no tag with that name, it will use a 7 days default value for each A
 
 After creating the AMI it creates a "DeleteOn" tag on the AMI indicating when it will be deleted using the Retention value and the cleanup Lambda function
 
+The Date format is using yyyy-MM-dd
+
