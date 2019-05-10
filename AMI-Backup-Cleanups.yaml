@@ -1,0 +1,153 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Lambda AMI Backup and Cleanup
+Metadata:
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: Lambda Rate
+        Parameters:
+          - LambdaRateBackup
+          - LambdaRateCleanup
+Parameters:
+  LambdaRateBackup:
+    Description: >
+      The rate (frequency) that determines when CloudWatch Events runs the rule that
+      triggers the Lambda Backup function, Default is everyday at 18:30.
+    Default: cron(30 18 ? * * *)
+    Type: String
+  LambdaRateCleanup:
+    Description: >
+      The rate (frequency) that determines when CloudWatch Events runs the rule that
+      triggers the Lambda Cleanup function, Default is everyday at 22:00.
+    Default: cron(0 22 ? * * *)
+    Type: String
+  lambdaAMIBackups: #Name of the Lambda Module
+    Description: The name of the Backup Python file
+    Type: String
+    Default: "lambdaAMIBackups"
+  lambdaAMICleanup: #Name of the Lambda Module
+    Description: The name of the Cleanup Python file
+    Type: String
+    Default: "lambdaAMICleanup"
+  S3Bucket: #S3 bucket in which to retrieve the python script with the Lambda handler
+    Description: The name of the bucket that contains your packaged source
+    Type: String
+    Default: "AMIBackupsBucket"
+  BackupS3Key: #Name of the zip file
+    Description: The name of the Backup ZIP package
+    Type: String
+    Default: "lambdaAMIBackups.zip"
+  CleanupS3Key: #Name of the zip file
+    Description: The name of the Cleanup ZIP package
+    Type: String
+    Default: "lambdaAMICleanup.zip"
+Resources:
+  LambdaExecutionRole: #IAM Role for Custom Resource
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: ami-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:*
+                Resource: arn:aws:logs:*:*:*
+              - Effect: Allow
+                Action: ec2:Describe*
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ec2:CreateSnapshot
+                  - ec2:DeleteSnapshot
+                  - ec2:CreateTags
+                  - ec2:ModifySnapshotAttribute
+                  - ec2:ResetSnapshotAttribute
+                  - ec2:CreateImage
+                  - ec2:DeleteImage
+                  - ec2:DeregisterImage
+                Resource:
+                  - "*"
+  LambdaScheduleBackups:
+    Type: "AWS::Events::Rule"
+    Properties:
+      Description: >
+        A schedule for the Backup Lambda function every 6hrs
+      ScheduleExpression: !Ref LambdaRateBackup
+      State: ENABLED
+      Targets:
+        - Arn: !Sub ${AMIBackups.Arn}
+          Id: LambdaScheduleBackups
+  LambdaScheduleBackupsPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Sub ${AMIBackups.Arn}
+      Principal: "events.amazonaws.com"
+      SourceArn: !Sub ${LambdaScheduleBackups.Arn}
+  AMIBackups:
+    Type: AWS::Lambda::Function
+    Properties:
+      Role:
+        Fn::GetAtt:
+          - "LambdaExecutionRole"
+          - "Arn"
+      Code:
+        S3Bucket:
+          Ref: S3Bucket
+        S3Key:
+          Ref: BackupS3Key
+      Handler:
+        Fn::Join:
+          - ""
+          - - Ref: lambdaAMIBackups
+            - ".lambda_handler"
+      Runtime: python2.7
+      Timeout: 60
+  LambdaScheduleCleanups:
+    Type: "AWS::Events::Rule"
+    Properties:
+      Description: >
+        A schedule for the Cleanup Lambda function every 6hrs
+      ScheduleExpression: !Ref LambdaRateCleanup
+      State: ENABLED
+      Targets:
+        - Arn: !Sub ${AMICleanups.Arn}
+          Id: LambdaScheduleCleanups
+  LambdaScheduleCleanupPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Sub ${AMICleanups.Arn}
+      Principal: "events.amazonaws.com"
+      SourceArn: !Sub ${LambdaScheduleCleanups.Arn}
+  AMICleanups:
+    Type: AWS::Lambda::Function
+    Properties:
+      Role:
+        Fn::GetAtt:
+          - "LambdaExecutionRole"
+          - "Arn"
+      Code:
+        S3Bucket:
+          Ref: S3Bucket
+        S3Key:
+          Ref: CleanupS3Key
+      Handler:
+        Fn::Join:
+          - ""
+          - - Ref: lambdaAMICleanup
+            - ".lambda_handler"
+      Runtime: python2.7
+      Timeout: 60
